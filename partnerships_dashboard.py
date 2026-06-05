@@ -77,7 +77,7 @@ with col_left:
     fig_growth.update_traces(line_color="#2d7a5f", marker=dict(size=10, color="#2d7a5f"))
     fig_growth.update_layout(
         plot_bgcolor="white", paper_bgcolor="white",
-        font_family="DM Sans", title_font_size=16, margin=dict(t=80, b=20)
+        font_family="DM Sans", title_font_size=16, margin=dict(t=100, b=20)
     )
     st.plotly_chart(fig_growth, use_container_width=True)
 
@@ -93,7 +93,7 @@ with col_right:
         plot_bgcolor="white", paper_bgcolor="white",
         font_family="DM Sans", title_font_size=16,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, title=""),
-        margin=dict(t=80, b=20)
+        margin=dict(t=100, b=20)
     )
     st.plotly_chart(fig_mix, use_container_width=True)
 
