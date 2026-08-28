@@ -26,12 +26,25 @@ st.markdown("""
     }
     .metric-card .label { font-size: 0.8rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; }
     .metric-card .value { font-size: 2.2rem; font-weight: 600; color: #1a1a2e; line-height: 1.1; }
-    .obs-box {
-        background-color: #f8faf8;
-        border: 1px solid #d6efd8;
+    .obs-card {
+        background-color: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-top: 4px solid #2d7a5f;
         border-radius: 8px;
-        padding: 1rem 1.5rem;
-        margin-bottom: 1.5rem;
+        padding: 1.2rem;
+        height: 100%;
+    }
+    .obs-card h4 {
+        color: #2d7a5f;
+        margin-top: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+    }
+    .obs-card p {
+        color: #4b5563;
+        font-size: 0.92rem;
+        line-height: 1.4;
+        margin-bottom: 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -51,7 +64,6 @@ except PermissionError:
     st.error(f"⚠️ **File Locked:** Please close '{EXCEL_FILE}' in Microsoft Excel and refresh the page.")
     st.stop()
 
-# Dynamically locate header row if there are title banner rows
 header_row_idx = None
 for i, row in df_raw.iterrows():
     row_values = [str(val) for val in row.values]
@@ -79,10 +91,18 @@ def extract_year_dynamically(val):
         return int(match.group(1))
     return None
 
+def extract_duration_years(val):
+    match = re.search(r'(\d+)', str(val))
+    if match:
+        return int(match.group(1))
+    return 1
+
 if col_duration:
     df["Start Year"] = df[col_duration].apply(extract_year_dynamically)
+    df["Tenure_Num"] = df[col_duration].apply(extract_duration_years)
 else:
     df["Start Year"] = None
+    df["Tenure_Num"] = 1
 
 if df["Start Year"].isna().all():
     df["Start Year"] = pd.Timestamp.now().year
@@ -91,6 +111,14 @@ if col_employed:
     df["Employed_Clean"] = pd.to_numeric(df[col_employed], errors="coerce").fillna(0).astype(int)
 else:
     df["Employed_Clean"] = 0
+
+# Calculate hiring rate per year per partner
+df["Hires_Per_Year"] = df["Employed_Clean"] / df["Tenure_Num"]
+
+# Compare older cohorts vs recent cohorts
+avg_hires_recent = df[df["Tenure_Num"] <= 6]["Hires_Per_Year"].mean()
+avg_hires_older = df[df["Tenure_Num"] > 6]["Hires_Per_Year"].mean()
+pct_increase = ((avg_hires_recent - avg_hires_older) / avg_hires_older) * 100
 
 # ─── HEADER SECTION ──────────────────────────────────────────────────────────
 st.title("Shaping STEM Futures")
@@ -143,82 +171,123 @@ st.plotly_chart(fig_growth, use_container_width=True)
 
 st.markdown("---")
 
-# ─── 5. KEY DATASET OBSERVATIONS ─────────────────────────────────────────────
-st.markdown("### Key Insights & Observations")
-st.markdown("""
-<div class="obs-box">
-<ul>
-    <li><b>Top Employment Sector:</b> Professional Services leads student placement volume with <b>400 total alumni employed</b> across major partners (Deloitte & PwC).</li>
-    <li><b>Leading Employer:</b> Telecommunications (Telstra) holds the highest single-organization alumni count at <b>310 employees</b>.</li>
-    <li><b>Academic Engagement:</b> The <i>School of Science, Computing & Engineering Technologies</i> commands the broadest concentration of technology & cloud partners (AWS, Cisco, Microsoft, Wipro, Capgemini).</li>
-</ul>
-</div>
-""", unsafe_allow_html=True)
+# ─── 5. UPDATED OBSERVATIONS WITH ANNUAL HIRING TREND ─────────────────────────
+st.markdown("### Key Partner Network Observations")
 
-# ─── 6. INTERACTIVE INDUSTRY SECTOR CHART ────────────────────────────────────
-st.markdown("### Interactive Industry Sector Analysis")
+top_emp_partner = df.loc[df["Employed_Clean"].idxmax()][col_partner]
+top_emp_val = df["Employed_Clean"].max()
 
-col_metric, col_chart_type = st.columns(2)
+top_faculty = df[col_faculty].mode()[0] if col_faculty else "Engineering & Tech"
+top_faculty_count = df[df[col_faculty] == top_faculty][col_partner].nunique() if col_faculty else 0
 
-with col_metric:
-    metric_choice = st.radio(
-        "Select Metric to Analyze:",
-        options=["Total Students / Alumni Employed", "Partner Count"],
-        horizontal=True
-    )
+col_obs1, col_obs2, col_obs3 = st.columns(3)
 
-with col_chart_type:
-    chart_style = st.radio(
-        "Select Chart Style:",
-        options=["Interactive Donut Chart", "Interactive Horizontal Bar"],
-        horizontal=True
-    )
+with col_obs1:
+    st.markdown(f"""
+    <div class="obs-card">
+        <h4>📈 Annual Hiring Efficiency Trend</h4>
+        <p>Partners hire an average of <b>{df['Hires_Per_Year'].mean():.1f} students per year</b>. Newer partners (established ≤ 6 years) show a <b>▲ {pct_increase:.1f}% increase</b> in annual hiring velocity compared to legacy cohorts.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Aggregate sector data dynamically
-df_sector_agg = df.groupby(col_sector).agg(
-    Partner_Count=(col_partner, "nunique"),
-    Total_Employed=("Employed_Clean", "sum")
-).reset_index()
+with col_obs2:
+    st.markdown(f"""
+    <div class="obs-card">
+        <h4>🏆 Top Individual Employer</h4>
+        <p><b>{top_emp_partner}</b> represents the single largest enterprise employer, accounting for <b>{top_emp_val:,} Swinburne alumni and student placements</b>.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-val_col = "Total_Employed" if metric_choice == "Total Students / Alumni Employed" else "Partner_Count"
-val_label = "Students / Alumni Employed" if metric_choice == "Total Students / Alumni Employed" else "Active Partners"
+with col_obs3:
+    st.markdown(f"""
+    <div class="obs-card">
+        <h4>🎓 Faculty Engagement Hub</h4>
+        <p><b>{top_faculty}</b> commands the highest density of active industry collaborations, hosting <b>{top_faculty_count} core strategic partners</b>.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-if chart_style == "Interactive Donut Chart":
-    fig_sector_interactive = px.pie(
-        df_sector_agg,
-        names=col_sector,
-        values=val_col,
-        hole=0.4,
-        color_discrete_sequence=["#2d7a5f", "#a8d5c2", "#52a384", "#1a1a2e", "#84bfa4"],
-        title=f"Industry Sector Share ({metric_choice})"
-    )
-    fig_sector_interactive.update_traces(textinfo="percent+label")
-    fig_sector_interactive.update_layout(
-        font_family="DM Sans", title_font_size=16, margin=dict(t=50, b=20)
-    )
-else:
-    df_sector_agg = df_sector_agg.sort_values(by=val_col, ascending=True)
-    fig_sector_interactive = px.bar(
-        df_sector_agg,
-        y=col_sector,
-        x=val_col,
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ─── 6. REFINED BAR CHART: LEGEND ON BOTTOM, CUSTOM HOVER, RAW NUMBERS ────────
+st.markdown("### Partner Placement Impact & Longevity Rankings")
+st.markdown("_Partners are grouped by high-level sector clusters. Long-standing partners (10+ years) are highlighted with ⭐._")
+
+def generalize_sector(sector):
+    sec = str(sector).lower()
+    if any(k in sec for k in ["tech", "software", "cloud", "ai", "networking", "it"]):
+        return "Technology & Digital Services"
+    elif any(k in sec for k in ["professional", "accounting", "advisory", "consulting"]):
+        return "Business & Professional Services"
+    elif any(k in sec for k in ["health", "medical"]):
+        return "Health & Medical Research"
+    return "Engineering, Innovation & Govt"
+
+df["Sector Cluster"] = df[col_sector].apply(generalize_sector)
+
+# Label formatting
+df["Display_Label"] = df.apply(
+    lambda r: f"⭐ {r[col_partner]} ({r['Tenure_Num']} yrs)" if r["Tenure_Num"] >= 10 else f"{r[col_partner]} ({r['Tenure_Num']} yrs)",
+    axis=1
+)
+
+df_sorted = df.sort_values(by="Employed_Clean", ascending=True)
+
+fig_impact = px.bar(
+    df_sorted,
+    y="Display_Label",
+    x="Employed_Clean",
+    color="Sector Cluster",
+    orientation="h",
+    text="Employed_Clean",
+    title="Students / Alumni Employed by Partner (Tenure Noted)",
+    hover_data={
+        col_sector: True,
+        "Employed_Clean": True,
+        "Display_Label": False,
+        "Sector Cluster": False
+    },
+    labels={
+        "Display_Label": "Partner Organization",
+        "Employed_Clean": "students employed",
+        col_sector: "industry",
+        "Sector Cluster": "Industry Domain"
+    },
+    color_discrete_map={
+        "Technology & Digital Services": "#2d7a5f",
+        "Business & Professional Services": "#52a384",
+        "Health & Medical Research": "#a8d5c2",
+        "Engineering, Innovation & Govt": "#1a1a2e"
+    }
+)
+
+# Show raw integer numbers (e.g., 310)
+fig_impact.update_traces(
+    textposition="outside",
+    texttemplate="%{text}",
+    hovertemplate="<b>industry:</b> %{customdata[0]}<br><b>students employed:</b> %{x}<extra></extra>"
+)
+
+fig_impact.update_layout(
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    font_family="DM Sans",
+    title_font_size=16,
+    height=580,
+    margin=dict(t=40, b=80, l=10, r=60),
+    # Moved legend directly to the bottom
+    legend=dict(
         orientation="h",
-        text=val_col,
-        color=val_col,
-        color_continuous_scale=["#a8d5c2", "#2d7a5f"],
-        title=f"Industry Sectors Ranked by {val_label}"
-    )
-    fig_sector_interactive.update_traces(textposition="outside")
-    fig_sector_interactive.update_layout(
-        showlegend=False, coloraxis_showscale=False,
-        plot_bgcolor="white", paper_bgcolor="white",
-        font_family="DM Sans", title_font_size=16,
-        margin=dict(t=50, b=20),
-        xaxis=dict(title=val_label),
-        yaxis=dict(title="")
-    )
+        yanchor="top",
+        y=-0.18,
+        xanchor="center",
+        x=0.5,
+        title=""
+    ),
+    xaxis=dict(title="Total Students / Alumni Employed", showgrid=True, gridcolor="#f0f0f0"),
+    yaxis=dict(title="")
+)
 
-st.plotly_chart(fig_sector_interactive, use_container_width=True)
+st.plotly_chart(fig_impact, use_container_width=True)
 
 st.markdown("---")
 
@@ -233,7 +302,7 @@ if selected_sector != "All":
 else:
     filtered_df = df
 
-display_cols = [c for c in df.columns if c not in ["Start Year", "Employed_Clean"]]
+display_cols = [c for c in df.columns if c not in ["Start Year", "Employed_Clean", "Tenure_Num", "Hires_Per_Year", "Sector Cluster", "Display_Label"]]
 
 st.dataframe(
     filtered_df[display_cols],
